@@ -1,0 +1,34 @@
+{
+  "name": "campusone_backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+"scripts": {
+  "start": "node src/index.js",
+  "dev": "nodemon src/index.js",
+  "test": "jest --passWithNoTests"
+},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ImplementSprint/CampusOne_BackEnd.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ImplementSprint/CampusOne_BackEnd/issues"
+  },
+  "homepage": "https://github.com/ImplementSprint/CampusOne_BackEnd#readme",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.90.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0"
+  },
+  "devDependencies": {
+    "jest": "^30.2.0",
+    "nodemon": "^3.1.13",
+    "supertest": "^7.2.2"
+  }
+}

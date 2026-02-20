@@ -1,0 +1,109 @@
+########################################################################
+# VERSION REGISTRY
+# Central store for all tribe release versions and tags.
+# Triggered automatically by any tribe pipeline on push to main.
+# Also accepts manual workflow_dispatch to log or query versions.
+########################################################################
+name: 📦 Version Registry
+
+on:
+  # Tribes trigger this via repository_dispatch from their own pipelines
+  repository_dispatch:
+    types: [register-version]
+  # Manual query / audit
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action to perform"
+        required: true
+        default: "list"
+        type: choice
+        options:
+          - list          # List all registered versions
+          - audit         # Check for outdated versions
+          - export        # Export version history as JSON artifact
+  # Scheduled: daily audit of version health
+  schedule:
+    - cron: '0 8 * * *'    # 8:00 AM UTC daily
+
+jobs:
+  # ── Register Incoming Version ─────────────────────────────────────
+  register:
+    name: Register Version from Tribe Pipeline
+    runs-on: ubuntu-latest
+    if: github.event_name == 'repository_dispatch' && github.event.action == 'register-version'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.VERSION_REGISTRY_PAT }}
+
+      - name: Append version entry to registry
+        run: |
+          node scripts/register-version.js \
+            --tribe       "${{ github.event.client_payload.tribe }}" \
+            --system      "${{ github.event.client_payload.system }}" \
+            --repo-type   "${{ github.event.client_payload.repo_type }}" \
+            --version     "${{ github.event.client_payload.version }}" \
+            --tag         "${{ github.event.client_payload.tag }}" \
+            --environment "${{ github.event.client_payload.environment }}" \
+            --run-id      "${{ github.event.client_payload.run_id }}" \
+            --run-url     "${{ github.event.client_payload.run_url }}" \
+            --deployed-by "${{ github.event.client_payload.deployed_by }}" \
+            --timestamp   "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          # Updates registry/versions.json and registry/changelog.md
+
+      - name: Commit version update
+        run: |
+          git config user.name  "CI/CD Bot"
+          git config user.email "cicd-bot@org.local"
+          git add registry/
+          git commit -m "chore: register ${{ github.event.client_payload.tribe }}/${{ github.event.client_payload.system }} ${{ github.event.client_payload.version }} [${{ github.event.client_payload.environment }}]"
+          git push
+
+  # ── List / Audit ──────────────────────────────────────────────────
+  audit:
+    name: Audit Version Registry
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run version audit
+        run: |
+          node scripts/audit-versions.js \
+            --warn-days 30 \
+            --fail-days 90
+          # Warns if a tribe has not deployed in 30 days
+          # Fails if a tribe has not deployed in 90 days
+
+      - name: Export version report
+        if: github.event.inputs.action == 'export' || github.event_name == 'schedule'
+        run: |
+          node scripts/export-report.js --format html > version-report.html
+          node scripts/export-report.js --format json > version-report.json
+
+      - name: Upload version report
+        if: github.event.inputs.action == 'export' || github.event_name == 'schedule'
+        uses: actions/upload-artifact@v4
+        with:
+          name: version-registry-report-${{ github.run_number }}
+          path: |
+            version-report.html
+            version-report.json
+          retention-days: 90
+
+  # ── Notify on Version Registration ───────────────────────────────
+  notify:
+    name: Notify on Registration
+    runs-on: ubuntu-latest
+    needs: register
+    if: always() && github.event_name == 'repository_dispatch'
+    uses: ./.github/workflows/notify.yml
+    with:
+      status: ${{ needs.register.result }}
+      pipeline: "Version Registry – Registration"
+      version: ${{ github.event.client_payload.version }}
+      environment: ${{ github.event.client_payload.environment }}
+      tribe: ${{ github.event.client_payload.tribe }}
+      system: ${{ github.event.client_payload.system }}
+    secrets: inherit
